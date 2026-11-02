@@ -1,0 +1,7 @@
+build/
+build-*/
+.deps/
+.vs/
+*.user
+*.fb2k-component
+
