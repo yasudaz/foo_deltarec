@@ -3,6 +3,19 @@
 All notable changes to `foo_deltarec` are documented here.
 This project is a foobar2000 x64 component derived from [Imaha486/deltarec](https://github.com/Imaha486/deltarec) and [yasudaz/deltarec](https://github.com/yasudaz/deltarec).
 
+## [0.2.0] - 2026-11-03
+
+### Added
+- **Property-Based Subfolder Creation (`src/main.cpp`, `src/foo_deltarec.rc.in`, `src/resource.h`)**:
+  - Added **Create subfolder using track/album properties** checkbox and customizable **Subfolder Name** pattern field (e.g., `[%artist%] %album%-(%encoder%)` or `[%Arthist%]%album%_(%encoder%)`).
+  - Supports `%encoder%` (`DSD64` / `DSD128` / `DSD256` / `DSD512`), `%format%` (`DSF` / `DFF`), `%artist%` (and `%Arthist%`), `%album%`, and any foobar2000 metadata tag token, including multi-level relative paths (`\`).
+- **Automatic Multi-Disc Subfolder Option (`Disc1`, `Disc2`, ...)**:
+  - Added **Create Disc subfolder (Disc1, Disc2...) for multi-disc albums** checkbox.
+  - Automatically detects multi-disc albums via `TOTALDISCS` / `DISCTOTAL`, `DISCNUMBER` (`N/M`), or batch track pre-scanning, creating `%Output Folder%\%Sub Folder%\DiscN` when disc count is 2 or more, while omitting `DiscN` for single-disc albums.
+- **Output Directory Verification & Error Handling**:
+  - Added `ensureDirectoryExists` to validate and recursively create missing target folders and subfolders.
+  - Displays a modal error dialog (`MessageBoxW`) and immediately aborts encoding if the target folder cannot be created.
+
 ## [0.1.0] - 2026-11-02
 
 ### Added (foobar2000 Component Features over [Imaha486/deltarec](https://github.com/Imaha486/deltarec))

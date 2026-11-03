@@ -14,7 +14,7 @@
   - **Output Format**: Sony `DSF (.dsf)` or Philips `DSDIFF (.dff)`
   - **Modulator Order**: `2nd` to `8th` order (default `7th` order, Gauss–Legendre NTF zeros, Butterworth poles bisected to $H_\infty = 1.4$)
   - **Input Gain (dB)** & **TPDF Dither** toggle
-  - **Output Destination**: Save in the same folder as each source track, or choose a custom target folder and output filename pattern (`Source filename`, `%tracknumber% - %title%`, or `%artist% - %title%`).
+  - **Output Destination**: Save in the same folder as each source track, or choose a custom target folder, optional property-based subfolder pattern (e.g. `[%artist%] %album%-(%encoder%)`), automatic `Disc1`, `Disc2`... subfolder creation for multi-disc albums, and output filename pattern (`Source filename`, `%tracknumber% - %title%`, or `%artist% - %title%`).
 - **Metadata & Album Art Copying**: Automatically reads source track metadata and embedded/external front cover artwork via `album_art_manager_v2` and embeds a compliant **ID3v2.3 (UTF-16)** tag chunk into both `.dsf` and `.dff` files.
 - **AVX2 & Multi-Threaded DSP Engine**: Uses the transposed polyphase Kaiser-windowed-sinc FIR upsampler (160 dB stopband attenuation), SIMD register-resident ΔΣ modulator state update, L1/L2 cache tiling, and per-channel lock-free SPSC producer-consumer threading.
 

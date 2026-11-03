@@ -23,7 +23,7 @@
 
 DECLARE_COMPONENT_VERSION(
     "deltarec DSD Converter",
-    "0.1.0",
+    "0.2.0",
     "Offline PCM to 1-bit DSD (DSF / DSDIFF) converter for foobar2000.\n"
     "Two-stage polyphase FIR upsampler + 7th-order noise-shaping delta-sigma modulator.\n\n"
     "Right-click tracks and select 'Convert to DSD (deltarec)...'."
@@ -46,9 +46,12 @@ static const GUID guid_cfg_order       = { 0x8d42e613, 0x3c7a, 0x4f81, { 0x9e, 0
 static const GUID guid_cfg_gain_str    = { 0x8d42e614, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x05 } };
 static const GUID guid_cfg_dither      = { 0x8d42e615, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x06 } };
 static const GUID guid_cfg_copy_tags   = { 0x8d42e616, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x07 } };
-static const GUID guid_cfg_same_folder = { 0x8d42e617, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x08 } };
-static const GUID guid_cfg_out_dir     = { 0x8d42e618, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x09 } };
-static const GUID guid_cfg_naming      = { 0x8d42e619, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x0a } };
+static const GUID guid_cfg_same_folder       = { 0x8d42e617, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x08 } };
+static const GUID guid_cfg_out_dir           = { 0x8d42e618, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x09 } };
+static const GUID guid_cfg_naming            = { 0x8d42e619, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x0a } };
+static const GUID guid_cfg_use_subfolder     = { 0x8d42e61a, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x0b } };
+static const GUID guid_cfg_subfolder_pattern = { 0x8d42e61b, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x0c } };
+static const GUID guid_cfg_disc_subfolder    = { 0x8d42e61c, 0x3c7a, 0x4f81, { 0x9e, 0x12, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0x0d } };
 
 static cfg_int    g_cfg_rate(guid_cfg_rate, 256);
 static cfg_int    g_cfg_base_mode(guid_cfg_base_mode, 0);      // 0: Auto, 1: 44100, 2: 48000
@@ -60,6 +63,9 @@ static cfg_int    g_cfg_copy_tags(guid_cfg_copy_tags, 1);
 static cfg_int    g_cfg_same_folder(guid_cfg_same_folder, 1);
 static cfg_string g_cfg_out_dir(guid_cfg_out_dir, "");
 static cfg_int    g_cfg_naming(guid_cfg_naming, 0);            // 0: source name, 1: %tracknumber% - %title%, 2: %artist% - %title%
+static cfg_int    g_cfg_use_subfolder(guid_cfg_use_subfolder, 0);
+static cfg_string g_cfg_subfolder_pattern(guid_cfg_subfolder_pattern, "[%album artist%] %album%-(%encoder%)");
+static cfg_int    g_cfg_disc_subfolder(guid_cfg_disc_subfolder, 0);
 
 struct ConvertSettings {
     int rate = 256;          // 64, 128, 256, 512
@@ -74,6 +80,9 @@ struct ConvertSettings {
     bool copyTags = true;
     bool sameFolder = true;
     std::string outDir;
+    bool useSubfolder = false;
+    std::string subfolderPattern = "[%album artist%] %album%-(%encoder%)";
+    bool useDiscSubfolder = false;
     int namingMode = 0;
 };
 
@@ -111,6 +120,260 @@ std::string sanitizeFilename(const std::string& name) {
     while (!out.empty() && (out.back() == ' ' || out.back() == '.')) out.pop_back();
     if (out.empty()) out = "output";
     return out;
+}
+
+std::string toLowerAscii(const std::string& s) {
+    std::string out = s;
+    for (char& c : out) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return out;
+}
+
+std::string resolvePropertyToken(
+    const std::string& rawToken,
+    const metadb_handle_ptr& track,
+    const file_info& info,
+    const ConvertSettings& settings,
+    const std::string& srcStem
+) {
+    std::string lower = toLowerAscii(rawToken);
+    if (lower == "encoder" || lower == "dsd_rate" || lower == "rate") {
+        return "DSD" + std::to_string(settings.rate);
+    }
+    if (lower == "format") {
+        return (settings.format == 1) ? "DFF" : "DSF";
+    }
+    if (lower == "filename") {
+        return sanitizeFilename(srcStem.empty() ? "Unknown" : srcStem);
+    }
+
+    // Support both "%artist%" and "%Arthist%" (common spelling variant)
+    std::string queryField = (lower == "arthist") ? "artist" : rawToken;
+    std::string spec = "%" + queryField + "%";
+
+    titleformat_object::ptr tf;
+    titleformat_compiler::get()->compile_safe_ex(tf, spec.c_str());
+    pfc::string8 formatted;
+    track->format_title(nullptr, formatted, tf, nullptr);
+    std::string val(formatted.c_str());
+
+    if (val.empty() || val == "?") {
+        const char* metaVal = info.meta_get(queryField.c_str(), 0);
+        if (metaVal && *metaVal) {
+            val = metaVal;
+        } else if (lower == "artist" || lower == "arthist" || lower == "album artist" || lower == "albumartist") {
+            val = "Unknown Artist";
+        } else if (lower == "album") {
+            val = "Unknown Album";
+        } else if (lower == "title") {
+            val = srcStem.empty() ? "Unknown Title" : srcStem;
+        } else {
+            val = "Unknown";
+        }
+    }
+
+    return sanitizeFilename(val);
+}
+
+// Expands a subfolder pattern such as "[%Arthist%]%album%_(%encoder%)" using track/album properties.
+// Characters outside %...% (including '[' and ']') are preserved literally.
+std::string formatSubfolderName(
+    const std::string& pattern,
+    const metadb_handle_ptr& track,
+    const file_info& info,
+    const ConvertSettings& settings,
+    const std::string& srcStem
+) {
+    std::string expanded;
+    expanded.reserve(pattern.size() + 64);
+
+    size_t i = 0;
+    const size_t n = pattern.size();
+    while (i < n) {
+        if (pattern[i] == '%') {
+            size_t end = pattern.find('%', i + 1);
+            if (end != std::string::npos) {
+                if (end == i + 1) {
+                    // "%%" -> literal '%'
+                    expanded.push_back('%');
+                } else {
+                    std::string token = pattern.substr(i + 1, end - i - 1);
+                    expanded.append(resolvePropertyToken(token, track, info, settings, srcStem));
+                }
+                i = end + 1;
+                continue;
+            }
+        }
+        expanded.push_back(pattern[i]);
+        ++i;
+    }
+
+    // Normalize slashes and trim trailing spaces/dots on each path segment
+    std::string result;
+    size_t pos = 0;
+    while (pos < expanded.size()) {
+        while (pos < expanded.size() && (expanded[pos] == '\\' || expanded[pos] == '/')) ++pos;
+        if (pos >= expanded.size()) break;
+        size_t nextSlash = expanded.find_first_of("\\/", pos);
+        std::string seg = (nextSlash == std::string::npos)
+            ? expanded.substr(pos)
+            : expanded.substr(pos, nextSlash - pos);
+        while (!seg.empty() && (seg.back() == ' ' || seg.back() == '.')) seg.pop_back();
+        if (!seg.empty()) {
+            if (!result.empty()) result.push_back('\\');
+            result.append(seg);
+        }
+        if (nextSlash == std::string::npos) break;
+        pos = nextSlash + 1;
+    }
+    return result;
+}
+
+std::string normalizeFolderSeparators(const std::string& path) {
+    std::string out = path;
+    for (char& c : out) {
+        if (c == '/') c = '\\';
+    }
+    while (!out.empty() && (out.back() == ' ')) out.pop_back();
+    // Strip trailing backslashes unless it is a drive root like "C:\"
+    while (out.size() > 1 && out.back() == '\\') {
+        if (out.size() == 3 && out[1] == ':') break;
+        out.pop_back();
+    }
+    return out;
+}
+
+std::string joinFolderAndSubpath(const std::string& baseFolder, const std::string& subPath) {
+    std::string base = normalizeFolderSeparators(baseFolder);
+    if (subPath.empty()) return base;
+    if (base.empty()) return subPath;
+    if (base.back() == '\\') return base + subPath;
+    return base + "\\" + subPath;
+}
+
+void parseDiscNumbersFromString(const char* str, int& discOut, int& totalOut) {
+    if (!str || !*str) return;
+    const char* p = str;
+    while (*p && (*p < '0' || *p > '9')) ++p;
+    if (*p >= '0' && *p <= '9') {
+        int d = std::atoi(p);
+        if (d > 0 && discOut <= 0) discOut = d;
+        while (*p >= '0' && *p <= '9') ++p;
+        if (*p == '/') {
+            ++p;
+            while (*p && (*p < '0' || *p > '9')) ++p;
+            if (*p >= '0' && *p <= '9') {
+                int t = std::atoi(p);
+                if (t > totalOut) totalOut = t;
+            }
+        }
+    }
+}
+
+void getTrackDiscInfo(const metadb_handle_ptr& track, const file_info& info, int& discNumOut, int& totalDiscsOut) {
+    discNumOut = 0;
+    totalDiscsOut = 0;
+
+    parseDiscNumbersFromString(info.meta_get("DISCNUMBER", 0), discNumOut, totalDiscsOut);
+    parseDiscNumbersFromString(info.meta_get("DISC", 0), discNumOut, totalDiscsOut);
+
+    const char* totalKeys[] = { "TOTALDISCS", "DISCTOTAL", "TOTALDISC" };
+    for (const char* k : totalKeys) {
+        const char* v = info.meta_get(k, 0);
+        if (v && *v) {
+            int dDummy = 0, tVal = 0;
+            parseDiscNumbersFromString(v, tVal, dDummy);
+            if (tVal > totalDiscsOut) totalDiscsOut = tVal;
+        }
+    }
+
+    if (discNumOut <= 0) {
+        titleformat_object::ptr tfDisc;
+        titleformat_compiler::get()->compile_safe_ex(tfDisc, "[%discnumber%]");
+        pfc::string8 formatted;
+        track->format_title(nullptr, formatted, tfDisc, nullptr);
+        parseDiscNumbersFromString(formatted.c_str(), discNumOut, totalDiscsOut);
+    }
+    if (totalDiscsOut <= 0) {
+        titleformat_object::ptr tfTotal;
+        titleformat_compiler::get()->compile_safe_ex(tfTotal, "[%totaldiscs%]");
+        pfc::string8 formatted;
+        track->format_title(nullptr, formatted, tfTotal, nullptr);
+        int dDummy = 0, tVal = 0;
+        parseDiscNumbersFromString(formatted.c_str(), tVal, dDummy);
+        if (tVal > totalDiscsOut) totalDiscsOut = tVal;
+    }
+
+    if (discNumOut > totalDiscsOut) {
+        totalDiscsOut = discNumOut;
+    }
+}
+
+// Checks if the target directory exists; if not, attempts to create it recursively.
+// Returns false and populates errMsgOut if the directory cannot be created.
+bool ensureDirectoryExists(const std::string& dirUtf8, std::wstring& errMsgOut) {
+    std::string normUtf8 = normalizeFolderSeparators(dirUtf8);
+    if (normUtf8.empty()) {
+        errMsgOut = L"Output folder path is empty.";
+        return false;
+    }
+
+    std::wstring wDir = utf8ToWide(normUtf8);
+    if (wDir.empty()) {
+        errMsgOut = L"Output folder path contains invalid characters.";
+        return false;
+    }
+
+    // Require an absolute path (drive root like "C:\..." or UNC path "\\server\share")
+    bool isAbsolute = (wDir.size() >= 3 &&
+                       ((wDir[0] >= L'A' && wDir[0] <= L'Z') || (wDir[0] >= L'a' && wDir[0] <= L'z')) &&
+                       wDir[1] == L':' && wDir[2] == L'\\') ||
+                      (wDir.size() >= 2 && wDir[0] == L'\\' && wDir[1] == L'\\');
+    if (!isAbsolute && wDir.size() == 2 && wDir[1] == L':') {
+        wDir.push_back(L'\\');
+        isAbsolute = true;
+    }
+    if (!isAbsolute) {
+        errMsgOut = L"Output folder must be a valid full path:\n" + wDir;
+        return false;
+    }
+
+    DWORD attr = GetFileAttributesW(wDir.c_str());
+    if (attr != INVALID_FILE_ATTRIBUTES) {
+        if ((attr & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            return true;
+        }
+        errMsgOut = L"Cannot create output folder because a file with the same name already exists:\n" + wDir;
+        return false;
+    }
+
+    int rc = SHCreateDirectoryExW(nullptr, wDir.c_str(), nullptr);
+    if (rc != ERROR_SUCCESS && rc != ERROR_ALREADY_EXISTS && rc != ERROR_FILE_EXISTS) {
+        wchar_t sysMsg[512] = {};
+        FormatMessageW(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr,
+            static_cast<DWORD>(rc),
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            sysMsg,
+            512,
+            nullptr
+        );
+        errMsgOut = L"Failed to create output folder:\n" + wDir;
+        if (sysMsg[0] != L'\0') {
+            errMsgOut += L"\n\nReason: ";
+            errMsgOut += sysMsg;
+        }
+        return false;
+    }
+
+    DWORD attrAfter = GetFileAttributesW(wDir.c_str());
+    if (attrAfter == INVALID_FILE_ATTRIBUTES || (attrAfter & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        errMsgOut = L"Failed to verify output folder:\n" + wDir;
+        return false;
+    }
+    return true;
 }
 
 bool getTrackSourceFolderAndStem(const metadb_handle_ptr& track, std::string& folderOut, std::string& stemOut) {
@@ -439,7 +702,9 @@ public:
     DsdConvertWorker(metadb_handle_list_cref items, const ConvertSettings& settings)
         : items_(items), settings_(settings) {}
 
-    void on_init(ctx_t p_wnd) override {}
+    void on_init(ctx_t p_wnd) override {
+        hwndParent_ = p_wnd;
+    }
 
     void run(threaded_process_status& p_status, abort_callback& p_abort) override {
         const t_size trackCount = items_.get_count();
@@ -460,6 +725,63 @@ public:
         titleformat_compiler::get()->compile_safe_ex(tfTrackTitle, "[%tracknumber% - ]%title%");
         titleformat_compiler::get()->compile_safe_ex(tfArtistTitle, "[%artist% - ]%title%");
 
+        // Pre-scan disc numbers across selected tracks so multi-disc albums are detected
+        // even when TOTALDISCS is omitted on individual tracks.
+        std::vector<int> trackDiscNums(trackCount, 0);
+        std::vector<bool> trackIsMultiDisc(trackCount, false);
+        if (settings_.useDiscSubfolder) {
+            struct AlbumDiscStats {
+                std::string albumKey;
+                int maxTotalDiscs = 0;
+                int minDisc = 0;
+                int maxDisc = 0;
+            };
+            std::vector<AlbumDiscStats> albumStats;
+            std::vector<size_t> trackAlbumIdx(trackCount, 0);
+
+            for (t_size i = 0; i < trackCount; ++i) {
+                file_info_impl tInfo;
+                items_[i]->get_info(tInfo);
+                int dNum = 0, tDiscs = 0;
+                getTrackDiscInfo(items_[i], tInfo, dNum, tDiscs);
+                trackDiscNums[i] = dNum;
+
+                const char* alb = tInfo.meta_get("ALBUM", 0);
+                std::string key = (alb && *alb) ? toLowerAscii(alb) : std::string();
+                if (key.empty()) {
+                    std::string sFolder, sStem;
+                    if (getTrackSourceFolderAndStem(items_[i], sFolder, sStem)) {
+                        key = toLowerAscii(sFolder);
+                    }
+                }
+
+                size_t foundIdx = albumStats.size();
+                for (size_t a = 0; a < albumStats.size(); ++a) {
+                    if (albumStats[a].albumKey == key) {
+                        foundIdx = a;
+                        break;
+                    }
+                }
+                if (foundIdx == albumStats.size()) {
+                    albumStats.push_back({key, 0, 0, 0});
+                }
+                trackAlbumIdx[i] = foundIdx;
+
+                AlbumDiscStats& st = albumStats[foundIdx];
+                if (tDiscs > st.maxTotalDiscs) st.maxTotalDiscs = tDiscs;
+                if (dNum > 0) {
+                    if (st.minDisc == 0 || dNum < st.minDisc) st.minDisc = dNum;
+                    if (dNum > st.maxDisc) st.maxDisc = dNum;
+                }
+            }
+
+            for (t_size i = 0; i < trackCount; ++i) {
+                const AlbumDiscStats& st = albumStats[trackAlbumIdx[i]];
+                bool multi = (st.maxTotalDiscs > 1) || (st.minDisc > 0 && st.maxDisc > st.minDisc);
+                trackIsMultiDisc[i] = multi;
+            }
+        }
+
         for (t_size idx = 0; idx < trackCount; ++idx) {
             p_abort.check();
             metadb_handle_ptr track = items_[idx];
@@ -473,13 +795,33 @@ public:
             std::string srcFolder, srcStem;
             bool hasLocal = getTrackSourceFolderAndStem(track, srcFolder, srcStem);
 
-            std::string outFolder = (settings_.sameFolder && hasLocal) ? srcFolder : settings_.outDir;
-            while (!outFolder.empty() && (outFolder.back() == '\\' || outFolder.back() == '/')) {
-                outFolder.pop_back();
+            std::string baseFolder = (settings_.sameFolder && hasLocal) ? srcFolder : settings_.outDir;
+            std::string outFolder = normalizeFolderSeparators(baseFolder);
+
+            if (settings_.useSubfolder) {
+                std::string subFolder = formatSubfolderName(settings_.subfolderPattern, track, info, settings_, srcStem);
+                if (subFolder.empty()) {
+                    std::wstring errMsg = L"Failed to generate a valid subfolder name from pattern:\n" +
+                                          utf8ToWide(settings_.subfolderPattern);
+                    FB2K_console_formatter() << "foo_deltarec error: invalid subfolder pattern (" << settings_.subfolderPattern.c_str() << ")";
+                    MessageBoxW(hwndParent_ ? hwndParent_ : core_api::get_main_window(),
+                                errMsg.c_str(), L"Convert to DSD (deltarec) - Error", MB_ICONERROR | MB_OK);
+                    return;
+                }
+                outFolder = joinFolderAndSubpath(outFolder, subFolder);
             }
-            if (!outFolder.empty()) {
-                std::wstring wDir = utf8ToWide(outFolder);
-                SHCreateDirectoryExW(nullptr, wDir.c_str(), nullptr);
+
+            if (settings_.useDiscSubfolder && trackIsMultiDisc[idx]) {
+                int discNum = trackDiscNums[idx] > 0 ? trackDiscNums[idx] : 1;
+                outFolder = joinFolderAndSubpath(outFolder, "Disc" + std::to_string(discNum));
+            }
+
+            std::wstring dirErrMsg;
+            if (!ensureDirectoryExists(outFolder, dirErrMsg)) {
+                FB2K_console_formatter() << "foo_deltarec error: cannot create output folder: " << outFolder.c_str();
+                MessageBoxW(hwndParent_ ? hwndParent_ : core_api::get_main_window(),
+                            dirErrMsg.c_str(), L"Convert to DSD (deltarec) - Error", MB_ICONERROR | MB_OK);
+                return;
             }
 
             std::string outStem;
@@ -499,7 +841,7 @@ public:
                 outStem = sanitizeFilename(formatted.c_str());
             }
 
-            std::string outPath = outFolder + "\\" + outStem + ext;
+            std::string outPath = joinFolderAndSubpath(outFolder, outStem + ext);
 
             // Open foobar2000 decoder for this track
             input_decoder::ptr decoder;
@@ -636,6 +978,7 @@ public:
 private:
     metadb_handle_list items_;
     ConvertSettings settings_;
+    HWND hwndParent_ = nullptr;
 };
 
 // ---- Modal Configuration Dialog ------------------------------------------
@@ -685,6 +1028,9 @@ void updateOutDirState(HWND hwnd) {
     BOOL sameFolder = (IsDlgButtonChecked(hwnd, IDC_SAME_FOLDER_CHECK) == BST_CHECKED);
     EnableWindow(GetDlgItem(hwnd, IDC_OUTDIR_EDIT), !sameFolder);
     EnableWindow(GetDlgItem(hwnd, IDC_BROWSE_BTN), !sameFolder);
+
+    BOOL useSubfolder = (IsDlgButtonChecked(hwnd, IDC_SUBFOLDER_CHECK) == BST_CHECKED);
+    EnableWindow(GetDlgItem(hwnd, IDC_SUBFOLDER_EDIT), useSubfolder);
 }
 
 INT_PTR CALLBACK ConvertDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -743,6 +1089,8 @@ INT_PTR CALLBACK ConvertDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         CheckDlgButton(hwnd, IDC_DITHER_CHECK, ctx->settings.dither > 0.0 ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_COPY_TAGS_CHECK, ctx->settings.copyTags ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_SAME_FOLDER_CHECK, ctx->settings.sameFolder ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_SUBFOLDER_CHECK, ctx->settings.useSubfolder ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_DISC_SUBFOLDER_CHECK, ctx->settings.useDiscSubfolder ? BST_CHECKED : BST_UNCHECKED);
 
         // Output directory default
         std::string defaultOutDir = ctx->settings.outDir;
@@ -751,6 +1099,13 @@ INT_PTR CALLBACK ConvertDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             getTrackSourceFolderAndStem(ctx->items[0], defaultOutDir, stem);
         }
         SetDlgItemTextW(hwnd, IDC_OUTDIR_EDIT, utf8ToWide(defaultOutDir).c_str());
+
+        // Subfolder pattern default
+        std::string defaultPattern = ctx->settings.subfolderPattern;
+        if (defaultPattern.empty()) {
+            defaultPattern = "[%artist%]%album%_(%encoder%)";
+        }
+        SetDlgItemTextW(hwnd, IDC_SUBFOLDER_EDIT, utf8ToWide(defaultPattern).c_str());
         updateOutDirState(hwnd);
 
         // Naming ComboBox
@@ -765,7 +1120,7 @@ INT_PTR CALLBACK ConvertDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
     case WM_COMMAND: {
         const WORD id = LOWORD(wParam);
-        if (id == IDC_SAME_FOLDER_CHECK) {
+        if (id == IDC_SAME_FOLDER_CHECK || id == IDC_SUBFOLDER_CHECK) {
             updateOutDirState(hwnd);
             return TRUE;
         }
@@ -795,14 +1150,26 @@ INT_PTR CALLBACK ConvertDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             ctx->settings.dither = (IsDlgButtonChecked(hwnd, IDC_DITHER_CHECK) == BST_CHECKED) ? 0.05 : 0.0;
             ctx->settings.copyTags = (IsDlgButtonChecked(hwnd, IDC_COPY_TAGS_CHECK) == BST_CHECKED);
             ctx->settings.sameFolder = (IsDlgButtonChecked(hwnd, IDC_SAME_FOLDER_CHECK) == BST_CHECKED);
+            ctx->settings.useSubfolder = (IsDlgButtonChecked(hwnd, IDC_SUBFOLDER_CHECK) == BST_CHECKED);
+            ctx->settings.useDiscSubfolder = (IsDlgButtonChecked(hwnd, IDC_DISC_SUBFOLDER_CHECK) == BST_CHECKED);
             ctx->settings.namingMode = std::clamp(static_cast<int>(SendDlgItemMessageW(hwnd, IDC_NAMING_COMBO, CB_GETCURSEL, 0, 0)), 0, 2);
 
             wchar_t outDirBuf[MAX_PATH * 2] = {};
             GetDlgItemTextW(hwnd, IDC_OUTDIR_EDIT, outDirBuf, MAX_PATH * 2);
             ctx->settings.outDir = wideToUtf8(outDirBuf);
 
+            wchar_t subPatternBuf[MAX_PATH * 2] = {};
+            GetDlgItemTextW(hwnd, IDC_SUBFOLDER_EDIT, subPatternBuf, MAX_PATH * 2);
+            ctx->settings.subfolderPattern = wideToUtf8(subPatternBuf);
+
             if (!ctx->settings.sameFolder && ctx->settings.outDir.empty()) {
                 MessageBoxW(hwnd, L"Please specify an output folder or check 'Save in the same folder as each source track'.",
+                            L"Convert to DSD (deltarec)", MB_ICONWARNING | MB_OK);
+                return TRUE;
+            }
+
+            if (ctx->settings.useSubfolder && ctx->settings.subfolderPattern.empty()) {
+                MessageBoxW(hwnd, L"Please specify a subfolder name pattern (e.g. [%artist%]%album%_(%encoder%)).",
                             L"Convert to DSD (deltarec)", MB_ICONWARNING | MB_OK);
                 return TRUE;
             }
@@ -817,7 +1184,20 @@ INT_PTR CALLBACK ConvertDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             g_cfg_copy_tags = ctx->settings.copyTags ? 1 : 0;
             g_cfg_same_folder = ctx->settings.sameFolder ? 1 : 0;
             if (!ctx->settings.outDir.empty()) g_cfg_out_dir = ctx->settings.outDir.c_str();
+            g_cfg_use_subfolder = ctx->settings.useSubfolder ? 1 : 0;
+            if (!ctx->settings.subfolderPattern.empty()) g_cfg_subfolder_pattern = ctx->settings.subfolderPattern.c_str();
+            g_cfg_disc_subfolder = ctx->settings.useDiscSubfolder ? 1 : 0;
             g_cfg_naming = ctx->settings.namingMode;
+
+            // Verify/create base output folder if specified; abort encoding if it cannot be created
+            if (!ctx->settings.sameFolder) {
+                std::wstring dirErrMsg;
+                if (!ensureDirectoryExists(ctx->settings.outDir, dirErrMsg)) {
+                    MessageBoxW(hwnd, dirErrMsg.c_str(), L"Convert to DSD (deltarec) - Error", MB_ICONERROR | MB_OK);
+                    EndDialog(hwnd, IDCANCEL);
+                    return TRUE;
+                }
+            }
 
             ctx->accepted = true;
             EndDialog(hwnd, IDOK);
@@ -874,6 +1254,9 @@ public:
         ctx.settings.copyTags = g_cfg_copy_tags.get_value() != 0;
         ctx.settings.sameFolder = g_cfg_same_folder.get_value() != 0;
         ctx.settings.outDir = g_cfg_out_dir.get().c_str();
+        ctx.settings.useSubfolder = g_cfg_use_subfolder.get_value() != 0;
+        ctx.settings.subfolderPattern = g_cfg_subfolder_pattern.get().c_str();
+        ctx.settings.useDiscSubfolder = g_cfg_disc_subfolder.get_value() != 0;
         ctx.settings.namingMode = static_cast<int>(g_cfg_naming.get_value());
 
         HWND parent = core_api::get_main_window();

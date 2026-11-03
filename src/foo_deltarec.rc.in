@@ -27,7 +27,7 @@ BEGIN
   END
 END
 
-IDD_DELTAREC_DIALOG DIALOGEX 0, 0, 340, 238
+IDD_DELTAREC_DIALOG DIALOGEX 0, 0, 340, 288
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Convert to DSD (deltarec)"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
@@ -56,7 +56,7 @@ BEGIN
     CONTROL         "Copy source tags && album art (ID3v2)", IDC_COPY_TAGS_CHECK, "Button",
                     BS_AUTOCHECKBOX | WS_TABSTOP, 155, 108, 168, 10
 
-    GROUPBOX        "Output Destination", -1, 7, 140, 326, 70
+    GROUPBOX        "Output Destination", -1, 7, 140, 326, 120
     CONTROL         "Save in the same folder as each source track", IDC_SAME_FOLDER_CHECK, "Button",
                     BS_AUTOCHECKBOX | WS_TABSTOP, 16, 153, 300, 10
 
@@ -64,9 +64,18 @@ BEGIN
     EDITTEXT        IDC_OUTDIR_EDIT, 95, 168, 175, 14, ES_AUTOHSCROLL | WS_TABSTOP
     PUSHBUTTON      "Browse...", IDC_BROWSE_BTN, 274, 168, 50, 14, WS_TABSTOP
 
-    LTEXT           "File Naming:", -1, 16, 189, 72, 10
-    COMBOBOX        IDC_NAMING_COMBO, 95, 187, 228, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Create subfolder using track/album properties", IDC_SUBFOLDER_CHECK, "Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP, 16, 188, 300, 10
 
-    DEFPUSHBUTTON   "Convert", IDOK, 222, 217, 52, 15, WS_TABSTOP
-    PUSHBUTTON      "Cancel", IDCANCEL, 281, 217, 52, 15, WS_TABSTOP
+    LTEXT           "Subfolder Name:", -1, 16, 205, 72, 10
+    EDITTEXT        IDC_SUBFOLDER_EDIT, 95, 203, 228, 14, ES_AUTOHSCROLL | WS_TABSTOP
+
+    CONTROL         "Create Disc subfolder (Disc1, Disc2...) for multi-disc albums", IDC_DISC_SUBFOLDER_CHECK, "Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP, 16, 221, 300, 10
+
+    LTEXT           "File Naming:", -1, 16, 239, 72, 10
+    COMBOBOX        IDC_NAMING_COMBO, 95, 237, 228, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+
+    DEFPUSHBUTTON   "Convert", IDOK, 222, 267, 52, 15, WS_TABSTOP
+    PUSHBUTTON      "Cancel", IDCANCEL, 281, 267, 52, 15, WS_TABSTOP
 END

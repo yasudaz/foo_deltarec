@@ -14,3 +14,6 @@
 #define IDC_OUTDIR_EDIT             1010
 #define IDC_BROWSE_BTN              1011
 #define IDC_NAMING_COMBO            1012
+#define IDC_SUBFOLDER_CHECK         1013
+#define IDC_SUBFOLDER_EDIT          1014
+#define IDC_DISC_SUBFOLDER_CHECK    1015

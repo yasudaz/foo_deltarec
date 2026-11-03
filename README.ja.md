@@ -16,7 +16,7 @@
   - **Output Format**: Sony `DSF (.dsf)` または Philips `DSDIFF (.dff)`
   - **Modulator Order**: `2nd` 〜 `8th`（既定 `7th`、Gauss–Legendre 零点配置・Butterworth 極配置 $H_\infty = 1.4$）
   - **Input Gain (dB)** および **TPDF Dither** の有効/無効
-  - **Output Destination**: 変換元トラックと同じフォルダに出力、または任意のフォルダ（`Browse...`）とファイル名規則（元ファイル名 / `%tracknumber% - %title%` / `%artist% - %title%`）を指定可能。
+  - **Output Destination**: 変換元トラックと同じフォルダに出力、または任意のフォルダ（`Browse...`）、曲・アルバムのプロパティを利用したサブフォルダ自動作成（例: `[%artist%] %album%-(%encoder%)`）、複数枚組アルバム時の `Disc1`, `Disc2`... サブフォルダ自動作成、およびファイル名規則（元ファイル名 / `%tracknumber% - %title%` / `%artist% - %title%`）を指定可能。
 - **メタデータ（タグ）＆カバーアートの完全コピー**
   - 変換元の標準タグ・カスタムタグ（`TXXX`）・フロントカバー画像（`album_art_manager_v2` による `APIC` フレーム）を ID3v2.3 (UTF-16) チャンクとして構築し、`.dsf` および `.dff` に直接埋め込みます。
 - **AVX2 & マルチスレッド高速 DSP エンジン**
